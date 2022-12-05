@@ -23,6 +23,7 @@ prohibited and subject to being investigated as a GT honor code violation.
 import six
 from six.moves import cPickle as pickle
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 import random
 
@@ -56,12 +57,19 @@ def load_CIFAR10(ROOT):
     Xte, Yte = load_CIFAR_batch(os.path.join(ROOT, 'test_batch'))
     return Xtr, Ytr, Xte, Yte
 
+
+def norm(data, mu=1):
+        return 2 * (data / 255.) - mu
+
+
 def load_CIFAR10_anomaly_data(label):
     root = '../cifar10_data/cifar-10-batches-py'
     X_train, Y_train, X_test, Y_test = load_CIFAR10(root)
-    # X_train = np.where(Y_train == label, X_train)
     X_train = X_train[np.where(Y_train == label)]
+    X_train = norm(np.asarray(X_train, dtype='float32'))
+    X_test = norm(np.asarray(X_test, dtype='float32'))
     return X_train, X_test, Y_test
+
 
 def get_CIFAR10_data(root, num_training=49000, num_validation=1000, num_test=1000):
     """
