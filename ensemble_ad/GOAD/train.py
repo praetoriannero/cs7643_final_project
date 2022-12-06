@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 import torch
 import torch.nn
 import torch.nn.functional as F
@@ -37,6 +38,9 @@ class TransClassifier():
         celoss = torch.nn.CrossEntropyLoss()
         fxs = []
 
+        best_auc = 0.0
+        best_loss = None
+        best_model = None
         for epoch in range(self.args.epochs):
             rp = np.random.permutation(N//n_rots)
             rp = np.repeat(rp*n_rots, n_rots) + np.tile(np.arange(n_rots), N//n_rots)
@@ -61,7 +65,8 @@ class TransClassifier():
                 loss.backward()
                 self.optimizer.step()
 
-            print(f'Epoch {epoch} Loss - {tot_loss*bs/N}')
+            avg_loss = tot_loss*bs/N
+            print(f'Epoch {epoch} Loss - {avg_loss}')
 
             self.netWRN.eval()
             mean = torch.cat(fxs, 0).mean(0)
@@ -81,5 +86,14 @@ class TransClassifier():
                     reidx = np.arange(bs // n_rots) + i // n_rots
                     scores[reidx] = -torch.diagonal(ls_dists, dim1=1, dim2=2).sum(1).cpu().data.numpy()
 
-                print(f'Epoch {epoch} AUC - {roc_auc_score(y_test, -scores)}')
+                auc = roc_auc_score(y_test, -scores)
+                print(f'Epoch {epoch} AUC - {auc}')
+                if auc > best_auc:
+                    best_auc = auc
+                    best_loss = avg_loss
+                    best_model = copy.deepcopy(self.netWRN)
+
+        print(f'Best AUC - {best_auc} - @ Loss - {best_loss}')
+        if self.args.save_best:
+            torch.save(best_model.state_dict(), 'GOAD_trained' + '.pth')
 
