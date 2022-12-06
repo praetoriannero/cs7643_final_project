@@ -4,8 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch as torch
 import itertools
-from ensemble_ad.cifar10_data.dataset_cifar import load_CIFAR10_anomaly_data
 import train
+from ensemble_ad.cifar10_data.dataset_cifar import load_CIFAR10_anomaly_data
 from torchvision.transforms.functional import rotate, affine
 
 parser = argparse.ArgumentParser(description='GOAD implementation')
@@ -34,7 +34,7 @@ def load_trans_data(args):
     x_train_trans, trans_labels = transform_data(x_train)
     x_test_trans, _ = transform_data(x_test)
     x_test_trans, x_train_trans = x_test_trans.transpose(0, 3, 1, 2), x_train_trans.transpose(0, 3, 1, 2)
-    y_test = 1 * np.array(y_test) == args.class_ind
+    y_test = np.array(y_test) == args.class_ind
     return x_train_trans, trans_labels, x_test_trans, y_test
 
 
@@ -55,13 +55,6 @@ def main():
             setattr(args, k, v)
     
     train_anomaly_detector(args)
-
-    # x_train, x_test, y_test = load_trans_data(args)
-
-    # for i in range(0,0+72):
-    #     im = x_train[i].transpose((1,2,0))
-    #     plt.imshow(im)
-    #     plt.show()
 
 
 if __name__ == '__main__':

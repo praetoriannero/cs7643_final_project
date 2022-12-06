@@ -6,7 +6,7 @@ Train:
   depth: 10
   widen_factor: 4
   s: 1
-  reg: True
+  reg: False
   eps: 0
 
 data:
