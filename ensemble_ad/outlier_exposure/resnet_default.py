@@ -6,18 +6,16 @@ import torchvision
 from ensemble_ad.utils import get_cifar10_dataset
 
 
-class WideResnetOutlierExposure(torch.nn.Module):
+class WideResnet(torch.nn.Module):
     def __init__(
             self,
             anomaly_labels: list,
             lr : float = 1e-3,
             batch_size : int = 128,
             epochs : int = 10,
-            lambda_hp : float = 0.5,
             device : str = "cpu") -> None:
         super().__init__()
         self.anomaly_labels = torch.tensor(anomaly_labels)
-        self.lambda_hp = lambda_hp
         self.epochs = epochs
         self.device = device
 
@@ -33,7 +31,6 @@ class WideResnetOutlierExposure(torch.nn.Module):
 
         self.anomaly_labels = self.anomaly_labels.to(self.device)
         self.model = self.model.to(self.device)
-        # self.optimizer = self.optimizer.to(self.device)
         self.ce_loss = self.ce_loss.to(self.device)
         self.to(self.device)
 
@@ -47,38 +44,20 @@ class WideResnetOutlierExposure(torch.nn.Module):
                 inputs = inputs.to(self.device)
                 labels = labels.to(self.device)
 
-                in_dist_indices = torch.isin(labels, self.anomaly_labels, invert=True)
-                out_dist_indices = torch.isin(labels, self.anomaly_labels)
-                # out_dist_outputs = labels[in_dist_indices == False]
-
-                binary_labels = out_dist_indices.long()
-                # labels = binary_labels
+                binary_labels = torch.isin(labels, self.anomaly_labels).long()
 
                 outputs = self.model(inputs)
-
-                in_dist_outputs = outputs[[in_dist_indices.squeeze()]]
-                # in_dist_labels = in_dist_indices.float()
-                in_dist_labels = binary_labels[[in_dist_indices.squeeze()]]
-
-                out_dist_outputs = outputs[[out_dist_indices.squeeze()]]
 
                 self.optimizer.zero_grad()
 
                 # calc loss here
-                ce_loss = self.ce_loss(in_dist_outputs, in_dist_labels)
-                predicted_labels = torch.argmax(in_dist_outputs, dim=1)
-                actual_labels = in_dist_labels
-                # batch_accuracy = predicted_labels == actual_labels
-                batch_accuracy = torch.sum(predicted_labels == actual_labels) / len(actual_labels)
+                loss = self.ce_loss(outputs, binary_labels)
+                predicted_labels = torch.argmax(outputs, dim=1)
+
+                batch_accuracy = torch.sum(predicted_labels == binary_labels) / len(binary_labels)
                 avg_accuracy += batch_accuracy
                 self.batch_accuracy.append(float(batch_accuracy))
 
-                # https://blog.feedly.com/tricks-of-the-trade-logsumexp/
-                oe_loss = self.lambda_hp * -(
-                    out_dist_outputs.mean(1) - torch.logsumexp(out_dist_outputs, dim=1)
-                ).mean()
-
-                loss = ce_loss + oe_loss
                 loss.backward()
 
                 self.optimizer.step()
@@ -98,31 +77,19 @@ class WideResnetOutlierExposure(torch.nn.Module):
                     inputs = inputs.to(self.device)
                     labels = labels.to(self.device)
 
-                    in_dist_indices = torch.isin(labels, self.anomaly_labels, invert=True)
-                    out_dist_indices = torch.isin(labels, self.anomaly_labels)
-
-                    binary_labels = out_dist_indices.long()
-                    # labels = binary_labels
+                    binary_labels = torch.isin(labels, self.anomaly_labels).long()
 
                     outputs = self.model(inputs)
 
-                    in_dist_outputs = outputs[[in_dist_indices.squeeze()]]
-                    in_dist_labels = binary_labels[[in_dist_indices.squeeze()]]
+                    self.optimizer.zero_grad()
 
-                    out_dist_outputs = outputs[[out_dist_indices.squeeze()]]
-                    ce_loss = self.ce_loss(in_dist_outputs, in_dist_labels)
+                    # calc loss here
+                    loss = self.ce_loss(outputs, binary_labels)
+                    predicted_labels = torch.argmax(outputs, dim=1)
 
-                    # https://blog.feedly.com/tricks-of-the-trade-logsumexp/
-                    oe_loss = self.lambda_hp * -(
-                        out_dist_outputs.mean(1) - torch.logsumexp(out_dist_outputs, dim=1)
-                    ).mean()
-
-                    loss = ce_loss + oe_loss
                     dev_avg_loss += float(loss)
 
-                    predicted_labels = torch.argmax(in_dist_outputs, dim=1)
-                    actual_labels = in_dist_labels
-                    valid_accuracy = torch.sum(predicted_labels == actual_labels) / len(actual_labels)
+                    valid_accuracy = torch.sum(predicted_labels == binary_labels) / len(binary_labels)
 
                 print(f"Validation loss: {dev_avg_loss / len(dev_dataloader)}")
                 print(f"Validation acc: {valid_accuracy * 100}%")
@@ -146,16 +113,6 @@ def main():
     anomaly_labels = [0, 5]
     invalid = torch.tensor(anomaly_labels)
 
-    # a = torch.randint(10, (10, 1))
-    # print(a)
-    # in_dist_indices = torch.isin(a, invalid)
-    # print(in_dist_indices.long())
-    # print(a[[in_dist_indices.squeeze()]])
-
-    # out_dist_indices = torch.isin(a, invalid)
-    # print(a[[out_dist_indices.squeeze()]])
-    # exit()
-
     train_dl = torch.utils.data.DataLoader(
         train_idx, batch_size=batch_size, shuffle=True)
     test_dl = torch.utils.data.DataLoader(
@@ -163,16 +120,16 @@ def main():
     dev_dl = torch.utils.data.DataLoader(
         dev_idx, batch_size=batch_size, shuffle=True)
 
-    wide_resnet_oe = WideResnetOutlierExposure(
+    wide_resnet = WideResnet(
         anomaly_labels,
         epochs=10,
         batch_size=batch_size,
         device="cuda" if torch.cuda.is_available else "cpu")
-    wide_resnet_oe.train(train_dl, dev_dl)
+    wide_resnet.train(train_dl, dev_dl)
 
     import matplotlib.pyplot as plt
 
-    plt.plot(wide_resnet_oe.epoch_accuracy)
+    plt.plot(wide_resnet.epoch_accuracy)
     plt.show()
 
 
