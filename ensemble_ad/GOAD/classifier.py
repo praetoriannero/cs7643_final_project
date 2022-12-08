@@ -3,6 +3,7 @@ import copy
 import torch
 import torch.nn
 import torch.nn.functional as F
+import transforms as T
 from wideresnet import WideResNet
 from sklearn.metrics import roc_auc_score
 
@@ -20,20 +21,25 @@ def tc_loss(fx, s):
     return tc
 
 
-class TransClassifier():
+class GOADClassifier():
     def __init__(self, num_trans, args):
-        self.n_trans = num_trans
+        self.num_trans = num_trans
         self.args = args
         self.netWRN = WideResNet(self.args.depth, num_trans, self.args.widen_factor).to(device)
         self.optimizer = torch.optim.Adam(self.netWRN.parameters())
 
 
-    def fit_trans_classifier(self, x_train, trans_labels, x_test, y_test):
+    def train(self, x_train, x_test, y_test):
+        x_train_trans, trans_labels = T.transform_data(x_train)
+        x_test_trans, _ = T.transform_data(x_test)
+        x_test_trans, x_train_trans = x_test_trans.transpose(0, 3, 1, 2), x_train_trans.transpose(0, 3, 1, 2)
+        y_test = np.array(y_test) == self.args.class_ind
+
         print('Training')
         self.netWRN.train()
         bs = self.args.batch_size
-        N = x_train.shape[0]
-        n_rots = self.n_trans
+        N = x_train_trans.shape[0]
+        n_trans = self.num_trans
         s = self.args.s
         celoss = torch.nn.CrossEntropyLoss()
         fxs = []
@@ -42,22 +48,22 @@ class TransClassifier():
         best_loss = None
         best_model = None
         for epoch in range(self.args.epochs):
-            rp = np.random.permutation(N//n_rots)
-            rp = np.repeat(rp*n_rots, n_rots) + np.tile(np.arange(n_rots), N//n_rots)
+            rp = np.random.permutation(N//n_trans)
+            rp = np.repeat(rp*n_trans, n_trans) + np.tile(np.arange(n_trans), N//n_trans)
             tot_loss = 0
 
             for i in range(0,N,bs):
                 idx = np.arange(i, min(i+bs,N))
-                x = torch.from_numpy(x_train[rp[idx]]).to(device)
+                x = torch.from_numpy(x_train_trans[rp[idx]]).to(device)
                 y = torch.from_numpy(trans_labels[rp[idx]]).to(device)
                 fx, y_p = self.netWRN(x)
-                fx_tc = fx.reshape((bs//n_rots, n_rots, -1))
+                fx_tc = fx.reshape((bs//n_trans, n_trans, -1))
                 fxs.append(fx_tc)
 
                 tc = tc_loss(fx_tc, s)
                 ce = celoss(y_p, y)
                 if self.args.reg:
-                        loss = ce + self.args.lmbda * tc + 10*(fx*fx).mean()
+                    loss = ce + self.args.lmbda * tc + 10*(fx*fx).mean()
                 else:
                     loss = ce + self.args.lmbda * tc
                 tot_loss += loss
@@ -70,20 +76,20 @@ class TransClassifier():
 
             self.netWRN.eval()
             mean = torch.cat(fxs, 0).mean(0)
-            N_test = x_test.shape[0]
+            N_test = x_test_trans.shape[0]
 
             with torch.no_grad():
                 scores = np.zeros(len(y_test))
                 for i in range(0,N_test,bs):
                     idx = range(i,min(i+bs,N_test))
-                    x = torch.from_numpy(x_test[idx]).to(device)
+                    x = torch.from_numpy(x_test_trans[idx]).to(device)
                     fx, _ = self.netWRN(x)
                     dists = torch.cdist(fx.reshape((bs,-1)), mean)**2
                     dists = torch.clamp(dists, min=self.args.eps)
-                    dists = dists.reshape((bs//n_rots, n_rots, -1))
+                    dists = dists.reshape((bs//n_trans, n_trans, -1))
                     ls_dists = F.log_softmax(-dists, dim=2)
 
-                    reidx = np.arange(bs // n_rots) + i // n_rots
+                    reidx = np.arange(bs // n_trans) + i // n_trans
                     scores[reidx] = -torch.diagonal(ls_dists, dim1=1, dim2=2).sum(1).cpu().data.numpy()
 
                 auc = roc_auc_score(y_test, -scores)
@@ -96,4 +102,9 @@ class TransClassifier():
         print(f'Best AUC - {best_auc} - @ Loss - {best_loss}')
         if self.args.save_best:
             torch.save(best_model.state_dict(), 'GOAD_trained' + '.pth')
+
+
+    def predict(x):
+        x_trans, _ = T.transform_data(x)
+        
 
