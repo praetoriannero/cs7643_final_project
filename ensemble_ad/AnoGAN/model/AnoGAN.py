@@ -51,7 +51,7 @@ class AnoGAN(nn.Module):
         self.G_optimizer.step()
         
         if verbose:
-            return binary_auroc(D_real, y[y ==1]), binary_accuracy(D_real, y[y ==1]), float(G_loss.data), float(D_loss.data), float(D_fake_loss.data), float(D_real_loss.data)
+            return binary_auroc(D_real, y), binary_accuracy(D_real, y), float(G_loss.data), float(D_loss.data), float(D_fake_loss.data), float(D_real_loss.data)
         
         
     def predict(self, batch, y, verbose = True):
@@ -66,8 +66,8 @@ class AnoGAN(nn.Module):
         G_image = self.G.forward(z)
         D_fake = self.D.forward(G_image)
         D_fake_loss = self.loss(D_fake, zeros)
-        D_real = self.D.forward(image[y == 1])
-        D_real_loss = self.loss(D_real, y[y==1])
+        D_real = self.D.forward(image)
+        D_real_loss = self.loss(D_real, y)
 
         D_loss = D_fake_loss + D_real_loss 
         
@@ -78,6 +78,6 @@ class AnoGAN(nn.Module):
         G_loss = self.loss(G_Fake, ones)
         
         if verbose:
-            return D_real, binary_auroc(D_real, y[y ==1]), binary_accuracy(D_real, y[y ==1]), float(G_loss.data), float(D_loss.data), float(D_fake_loss.data), float(D_real_loss.data)
+            return D_real, binary_auroc(D_real, y), binary_accuracy(D_real[y ==1], y[y ==1]), float(G_loss.data), float(D_loss.data), float(D_fake_loss.data), float(D_real_loss.data)
         else:
             return D_real
