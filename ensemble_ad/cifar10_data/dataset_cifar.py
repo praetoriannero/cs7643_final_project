@@ -68,6 +68,7 @@ def load_CIFAR10_anomaly_data(label):
     X_train = X_train[np.where(Y_train == label)]
     X_train = norm(np.asarray(X_train, dtype='float32'))
     X_test = norm(np.asarray(X_test, dtype='float32'))
+    Y_test = 1 * np.array(Y_test) == label
     return X_train, X_test, Y_test
 
 

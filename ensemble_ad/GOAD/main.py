@@ -12,6 +12,7 @@ from ensemble_ad.cifar10_data.dataset_cifar import load_CIFAR10_anomaly_data
 parser = argparse.ArgumentParser(description='GOAD implementation')
 parser.add_argument('--config', default='./config.yaml')
 
+
 def load_data(args):
     x_train, x_test, y_test = load_CIFAR10_anomaly_data(label=args.class_ind)
     return x_train, x_test, y_test

@@ -1,5 +1,6 @@
 import numpy as np
 import copy
+import pickle
 import torch
 import torch.nn
 import torch.nn.functional as F
@@ -10,6 +11,7 @@ from sklearn.metrics import roc_auc_score
 # Check device availability
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print("You are using device: %s" % device)
+
 
 def tc_loss(fx, s):
     mean = fx.mean(dim=0, keepdim=True)
@@ -33,7 +35,7 @@ class GOADClassifier():
         x_train_trans, trans_labels = T.transform_data(x_train)
         x_test_trans, _ = T.transform_data(x_test)
         x_test_trans, x_train_trans = x_test_trans.transpose(0, 3, 1, 2), x_train_trans.transpose(0, 3, 1, 2)
-        y_test = np.array(y_test) == self.args.class_ind
+        # y_test = np.array(y_test) == self.args.class_ind
 
         print('Training')
         self.netWRN.train()
@@ -44,9 +46,9 @@ class GOADClassifier():
         celoss = torch.nn.CrossEntropyLoss()
         fxs = []
 
-        best_auc = 0.0
-        best_loss = None
-        best_model = None
+        # best_auc = 0.0
+        # best_loss = None
+        # best_model = None
         for epoch in range(self.args.epochs):
             rp = np.random.permutation(N//n_trans)
             rp = np.repeat(rp*n_trans, n_trans) + np.tile(np.arange(n_trans), N//n_trans)
@@ -72,7 +74,7 @@ class GOADClassifier():
                 self.optimizer.step()
 
             avg_loss = tot_loss*bs/N
-            print(f'Epoch {epoch} Loss - {avg_loss}')
+            # print(f'Epoch {epoch} Loss - {avg_loss}')
 
             self.netWRN.eval()
             mean = torch.cat(fxs, 0).mean(0)
@@ -92,19 +94,23 @@ class GOADClassifier():
                     reidx = np.arange(bs // n_trans) + i // n_trans
                     scores[reidx] = -torch.diagonal(ls_dists, dim1=1, dim2=2).sum(1).cpu().data.numpy()
 
-                auc = roc_auc_score(y_test, -scores)
-                print(f'Epoch {epoch} AUC - {auc}')
-                if auc > best_auc:
-                    best_auc = auc
-                    best_loss = avg_loss
-                    best_model = copy.deepcopy(self.netWRN)
+                    if epoch == self.args.epochs - 1:
+                        scaled_scores = (scores.max() - scores) / (scores.max() - scores.min())
+                        torch.save(torch.from_numpy(scaled_scores), 'GOAD_scores_class_' + str(self.args.class_ind) + '.pt')
 
-        print(f'Best AUC - {best_auc} - @ Loss - {best_loss}')
-        if self.args.save_best:
-            torch.save(best_model.state_dict(), 'GOAD_trained' + '.pth')
+                auc = roc_auc_score(y_test, -scores)
+                print(f'Epoch {epoch + 1} Loss - {avg_loss:.2f}; AUC - {auc:.2%}')
+                # if auc > best_auc:
+                #     best_auc = auc
+                #     best_loss = avg_loss
+                #     best_model = copy.deepcopy(self.netWRN)
+
+        # print(f'Best AUC - {best_auc} - @ Loss - {best_loss}')
+        if self.args.save_model:
+            torch.save(self.netWRN.state_dict(), 'GOAD_trained_model_class_' + str(self.args.class_ind) + '.pt')
 
 
     def predict(x):
-        x_trans, _ = T.transform_data(x)
+        pass
         
 

@@ -1,7 +1,7 @@
 train:
   batch_size: 288
   lr: 0.001
-  epochs: 16
+  epochs: 10
   lmbda: 0.1
   depth: 10
   widen_factor: 4
@@ -14,4 +14,4 @@ data:
   dataset: cifar10
 
 model:
-  save_best: True
+  save_model: True

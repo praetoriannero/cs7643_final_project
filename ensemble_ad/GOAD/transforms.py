@@ -8,6 +8,7 @@ trans_x = (0, -8, 8)
 trans_y = (0, -8, 8)
 rotations = range(4)
 
+
 def num_trans():
     return len(flips)*len(trans_x)*len(trans_y)*len(rotations)
 
