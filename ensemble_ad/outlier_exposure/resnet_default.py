@@ -1,6 +1,8 @@
+from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 import torch
 from torch.utils.data import Subset
+from torchmetrics.classification import BinaryAUROC
 import torchvision
 
 from ensemble_ad.utils import get_cifar10_dataset
@@ -28,10 +30,12 @@ class WideResnet(torch.nn.Module):
         self.model = torchvision.models.wide_resnet50_2()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.ce_loss = torch.nn.CrossEntropyLoss()
+        self.auroc = BinaryAUROC()
 
         self.anomaly_labels = self.anomaly_labels.to(self.device)
         self.model = self.model.to(self.device)
         self.ce_loss = self.ce_loss.to(self.device)
+        self.auroc = self.auroc.to(self.device)
         self.to(self.device)
 
     def train(self, train_dataloader, dev_dataloader):
@@ -110,7 +114,7 @@ def main():
         [0.8, 0.1, 0.1]
     )
 
-    anomaly_labels = [0, 5]
+    anomaly_labels = [6, 7, 8, 9]
     invalid = torch.tensor(anomaly_labels)
 
     train_dl = torch.utils.data.DataLoader(
