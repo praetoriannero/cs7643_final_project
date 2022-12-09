@@ -94,9 +94,9 @@ class GOADClassifier():
                     reidx = np.arange(bs // n_trans) + i // n_trans
                     scores[reidx] = -torch.diagonal(ls_dists, dim1=1, dim2=2).sum(1).cpu().data.numpy()
 
-                    if epoch == self.args.epochs - 1:
-                        scaled_scores = (scores.max() - scores) / (scores.max() - scores.min())
-                        torch.save(torch.from_numpy(scaled_scores), 'GOAD_scores_class_' + str(self.args.class_ind) + '.pt')
+                if epoch == self.args.epochs - 1:
+                    scaled_scores = (-scores - -scores.min()) / (-scores.max() - -scores.min())
+                    torch.save(torch.from_numpy(scaled_scores), 'GOAD_scores_class_' + str(self.args.class_ind) + '.pt')
 
                 auc = roc_auc_score(y_test, -scores)
                 print(f'Epoch {epoch + 1} Loss - {avg_loss:.2f}; AUC - {auc:.2%}')
