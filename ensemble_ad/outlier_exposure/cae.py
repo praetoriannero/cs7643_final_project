@@ -6,14 +6,14 @@ from torchvision.utils import save_image
 from torchmetrics.functional.classification import binary_auroc, binary_accuracy
 from tqdm import tqdm
 
-from ensemble_ad.utils import get_cifar10_dataset
+from ensemble_ad.utils import get_cifar10_dataset, get_mnist_dataset, get_svhn_dataset
 
 # From https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
 class EncoderBlock(nn.Module):
-    def __init__(self, device='cpu'):
+    def __init__(self, channels, device='cpu'):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Conv2d(3, 8, 3),
+            nn.Conv2d(channels, 8, 3),
             # nn.BatchNorm2d(8),
             nn.LeakyReLU(),
             nn.Conv2d(8, 16, 3),
@@ -32,7 +32,7 @@ class EncoderBlock(nn.Module):
 
 
 class DecoderBlock(nn.Module):
-    def __init__(self, device='cpu'):
+    def __init__(self, channels, device='cpu'):
         super().__init__()
         self.model = nn.Sequential(
             nn.ConvTranspose2d(32, 16, 3),
@@ -41,7 +41,7 @@ class DecoderBlock(nn.Module):
             nn.ConvTranspose2d(16, 8, 3),
             # nn.BatchNorm2d(8),
             nn.LeakyReLU(),
-            nn.ConvTranspose2d(8, 3, 3)
+            nn.ConvTranspose2d(8, channels, 3)
         )
         self.model.to(device)
         self.to(device)
@@ -57,7 +57,9 @@ class LatentBlock(nn.Module):
             nn.Flatten(),
             nn.Linear(16 * 24 * 24, latent_size),
             nn.LeakyReLU(),
-            nn.Linear(latent_size, 32 * 26 * 26),
+            nn.Linear(latent_size, 100),
+            nn.Linear(100, 100),
+            nn.Linear(100, 32 * 26 * 26),
             nn.Unflatten(1, torch.Size([32, 26, 26])),
             nn.LeakyReLU()
         )
@@ -70,12 +72,12 @@ class LatentBlock(nn.Module):
 
 
 class ConvolutionalAutoencoder(nn.Module):
-    def __init__(self, latent_size, device='cpu'):
+    def __init__(self, latent_size, channels, device='cpu'):
         super().__init__()
         self.model = nn.Sequential(
-            EncoderBlock(device),
+            EncoderBlock(channels, device),
             LatentBlock(latent_size, device),
-            DecoderBlock(device)
+            DecoderBlock(channels, device)
         )
         self.rl_min = 0
         self.rl_max = 1
@@ -90,9 +92,9 @@ class ConvolutionalAutoencoder(nn.Module):
     def predict(self, x):
         x_r = self.forward(x)
         loss = self.loss_function(x_r, x)
-        return loss
-        # normalized_loss = torch.abs((loss - self.rl_min) / (self.rl_max - self.rl_min))
-        # return torch.sigmoid(normalized_loss)
+        # return loss
+        normalized_loss = torch.abs((loss - self.rl_min) / (self.rl_max - self.rl_min))
+        return torch.sigmoid(normalized_loss)
 
 
 def train(train_dataloader, model, in_dist_labels, loss_function, optimizer, epoch, device='cpu'):
@@ -149,17 +151,35 @@ def test(test_dataloader, model, in_dist_labels, loss_function, device='cpu'):
             loss = loss_function(outputs, inputs)
 
             fl = loss.item()
+
+            if fl > max_rl:
+                max_rl = fl
+            if fl < min_rl:
+                min_rl = fl
+
             total_loss += fl
 
+    model.rl_max = max_rl
+    model.rl_min = min_rl
     return model, total_loss
 
 
-def get_anomaly_scores(test_dataloader, model, device):
+def get_anomaly_scores(test_dataloader, model, device, in_dist_labels):
     model.eval()
     label_scores = None
     # total_predictions = 0
     label_scores = [0 for i in range(10)]
     label_count = [0 for i in range(10)]
+
+    true_positives = []
+    true_negatives = []
+
+    false_positives = []
+    false_negatives = []
+
+    preds = []
+    truth = []
+
     with torch.no_grad():
         for inputs, labels in tqdm(test_dataloader):
             inputs = inputs.to(device)
@@ -167,9 +187,14 @@ def get_anomaly_scores(test_dataloader, model, device):
 
             for idx, x_in in enumerate(inputs):
                 score = model.predict(x_in.unsqueeze(0))
+                preds.append(score.item())
+                truth.append(0 if labels[idx].data in in_dist_labels else 1)
 
-                label_scores[int(labels[idx].data)] += score.item()
-                label_count[int(labels[idx].data)] += 1
+                label_scores[labels[idx].data] += score.item()
+                label_count[labels[idx].data] += 1
+
+    bin_auroc = binary_auroc(torch.tensor(preds), torch.tensor(truth))
+    print(f"AUROC: {bin_auroc.item()}")
 
     label_scores = np.array(label_scores)
     label_count = np.array(label_count)
@@ -185,13 +210,32 @@ def main():
 
     batch_size = 256
 
-    cifar10_dataset = get_cifar10_dataset()
+    dataset = "cifar10"
 
-    train_idx, test_idx = torch.utils.data.random_split(
-        cifar10_dataset,
-        [0.8, 0.2]
-    )
+    if dataset == "mnist":
+        mnist_dataset = get_mnist_dataset()
+        train_idx, test_idx = torch.utils.data.random_split(
+            mnist_dataset,
+            [0.8, 0.2]
+        )
+        channels = 1
 
+
+    elif dataset == "cifar10":
+        cifar10_dataset = get_cifar10_dataset()
+        train_idx, test_idx = torch.utils.data.random_split(
+            cifar10_dataset,
+            [0.8, 0.2]
+        )
+        channels = 3
+
+    elif dataset == "svhn":
+        svhn_dataset = get_svhn_dataset()
+        train_idx, test_idx = torch.utils.data.random_split(
+            svhn_dataset,
+            [0.8, 0.2]
+        )
+        channels = 3
 
     train_dl = torch.utils.data.DataLoader(
         train_idx, batch_size=batch_size)
@@ -200,18 +244,20 @@ def main():
 
     latent_size = 64
 
-    cae = ConvolutionalAutoencoder(
-        latent_size=latent_size,
-        device=device
-    )
-    lr = 1e-3
-    epochs = 10
-    optimizer = torch.optim.Adam(cae.parameters(), lr)
-    loss_function = nn.MSELoss().to(device)
-    train_losses = []
-    test_losses = []
 
     for i in range(10):
+        i = 1
+        cae = ConvolutionalAutoencoder(
+            latent_size,
+            channels,
+            device=device
+        )
+        lr = 1e-3
+        epochs = 10
+        optimizer = torch.optim.Adam(cae.parameters(), lr)
+        loss_function = nn.MSELoss().to(device)
+        train_losses = []
+        test_losses = []
         for inputs, labels in test_dl:
             test_image = torch.unsqueeze(inputs[0].to(device), dim=0)
             test_label = labels[0]
@@ -235,17 +281,20 @@ def main():
             rec_output = cae(test_image)
             combined = torch.cat((test_image, rec_output), 2)
 
-            random_cae_img = save_image(combined, f"CAE_EPOCH_{epoch}_LABEL_{test_label}.png")
+            random_cae_img = save_image(combined, f"CAE_class_{test_label}_EPOCH_{epoch}.png")
 
-        get_anomaly_scores(test_dl, cae, device)
+        print("\nValidation Test")
+        get_anomaly_scores(test_dl, cae, device, in_dist_labels)
 
-        torch.save(cae, f"CAE_model_class_{i}_{latent_size}_{lr}_{epochs}.pth")
+        model_name = f"CAE_model_class_{i}_{latent_size}_{lr}_{epochs}"
+        torch.save(cae, f"{model_name}.pth")
 
-    import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt
 
-    plt.plot(train_losses)
-    plt.plot(test_losses)
-    plt.show()
+        plt.plot(train_losses)
+        plt.plot(test_losses)
+        plt.savefig(f"CAE_model_class_{i}_{latent_size}_{lr}_{epochs}_history.png")
+        break
 
 
 if __name__ == "__main__":
