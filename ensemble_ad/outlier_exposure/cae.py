@@ -6,7 +6,7 @@ from torchvision.utils import save_image
 from torchmetrics.functional.classification import binary_auroc, binary_accuracy
 from tqdm import tqdm
 
-from ensemble_ad.utils import get_cifar10_dataset, get_mnist_dataset, get_svhn_dataset
+from utils import get_cifar10_dataset, get_mnist_dataset, get_svhn_dataset
 
 # From https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
 class EncoderBlock(nn.Module):

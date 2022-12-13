@@ -4,8 +4,8 @@ import pickle
 import torch
 import torch.nn
 import torch.nn.functional as F
-import transforms as T
-from wideresnet import WideResNet
+import GOAD.transforms as T
+from GOAD.wideresnet import WideResNet
 from sklearn.metrics import roc_auc_score
 
 # Check device availability
@@ -111,6 +111,18 @@ class GOADClassifier():
 
 
     def predict(x):
+        scores = np.zeros(len(y_test))
+        for i in range(0,N_test,bs):
+            idx = range(i,min(i+bs,N_test))
+            x = torch.from_numpy(x_test_trans[idx]).to(device)
+            fx, _ = self.netWRN(x)
+            dists = torch.cdist(fx.reshape((bs,-1)), mean)**2
+            dists = torch.clamp(dists, min=self.args.eps)
+            dists = dists.reshape((bs//n_trans, n_trans, -1))
+            ls_dists = F.log_softmax(-dists, dim=2)
+
+            reidx = np.arange(bs // n_trans) + i // n_trans
+            scores[reidx] = -torch.diagonal(ls_dists, dim1=1, dim2=2).sum(1).cpu().data.numpy()
         pass
         
 

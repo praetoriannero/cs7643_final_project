@@ -1,5 +1,5 @@
-from model.Generator import Generator
-from model.Discriminator import Discriminator
+from AnoGAN.model.Generator import Generator
+from AnoGAN.model.Discriminator import Discriminator
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -21,7 +21,8 @@ class AnoGAN(nn.Module):
         self.D_optimizer = torch.optim.Adam(self.D.parameters(), lr = self.lr, betas=(self.beta, 0.999))
         
         
-    def train(self, batch, y, verbose = True):
+    def train(self, inputs, verbose = True):
+        batch, y = inputs
         image = Variable(batch)
         batch_size = int(batch.size()[0])
 
@@ -54,7 +55,8 @@ class AnoGAN(nn.Module):
             return binary_auroc(D_real, y), binary_accuracy(D_real, y), float(G_loss.data), float(D_loss.data), float(D_fake_loss.data), float(D_real_loss.data)
         
         
-    def predict(self, batch, y, verbose = True):
+    def predict(self, inputs, verbose = True):
+        batch, y = inputs
         image = Variable(batch)
         batch_size = int(batch.size()[0])
 
